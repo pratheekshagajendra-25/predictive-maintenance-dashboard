@@ -4,16 +4,14 @@ cd /d "%~dp0"
 set "PATH=C:\Users\Pratheeksha G\AppData\Local\dyad\app-1.13.0\resources\git\cmd;%PATH%"
 
 echo ======================================================================
-echo   INDUSTRY 4.0 PREDICTIVE MAINTENANCE PLATFORM - GITHUB DEPLOYMENT
+echo   PREDICTIVE MAINTENANCE PLATFORM - GITHUB DEPLOYMENT
 echo   Target Repository:
 echo   https://github.com/pratheekshagajendra-25/predictive-maintenance-dashboard
 echo ======================================================================
 echo.
 
-git config --local --unset credential.helper 2>nul
-
-echo [1/2] Attempting direct push to origin/main...
-git push -u origin main
+echo [1/2] Attempting push to origin/main...
+git push -u origin main --force
 
 if %ERRORLEVEL% equ 0 (
     echo.
@@ -27,12 +25,15 @@ if %ERRORLEVEL% equ 0 (
 
 echo.
 echo ======================================================================
-echo   GITHUB AUTHENTICATION REQUIRED
+echo   GITHUB AUTHENTICATION / ACCESS TOKEN REQUIRED
 echo ======================================================================
-echo   GitHub requires a Personal Access Token (Classic or Fine-Grained)
-echo   with 'repo' write permissions.
+echo   GitHub requires a Personal Access Token with 'repo' permissions
+echo   to authorize the push.
 echo.
-echo   Generate a token at: https://github.com/settings/tokens
+echo   1. Open: https://github.com/settings/tokens
+echo   2. Click "Generate new token (classic)"
+echo   3. Select the 'repo' checkbox and click Generate
+echo   4. Copy the token and paste it below:
 echo ======================================================================
 echo.
 
@@ -44,8 +45,8 @@ if "%GITHUB_TOKEN%"=="" (
 )
 
 echo.
-echo [2/2] Pushing with provided credentials...
-git push https://pratheekshagajendra-25:%GITHUB_TOKEN%@github.com/pratheekshagajendra-25/predictive-maintenance-dashboard.git main
+echo [2/2] Pushing project files to GitHub with token...
+git push https://pratheekshagajendra-25:%GITHUB_TOKEN%@github.com/pratheekshagajendra-25/predictive-maintenance-dashboard.git main --force
 
 if %ERRORLEVEL% equ 0 (
     echo.
