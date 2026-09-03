@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: predictive-maintenance-dashboard
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: MACHINE_NAME
+        value: Machine 01
+      - key: MACHINE_ID
+        value: MACH-01
+      - key: ALERT_RECIPIENTS
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false

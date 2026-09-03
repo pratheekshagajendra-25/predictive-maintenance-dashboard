@@ -1,8 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { Config } from './config.js';
 import { getDb } from './services/db.js';
 import { thingspeakService } from './services/thingspeakService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Route Handlers
 import authRouter from './routes/auth.js';
@@ -71,11 +77,24 @@ try {
   console.warn(`[THINGSPEAK] Background poller startup warning: ${err.message}`);
 }
 
+// Serve static frontend build in production
+const frontendDist = path.resolve(__dirname, '../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
 // Start Server on PORT 5000
-const server = app.listen(Config.PORT, Config.HOST, () => {
+const PORT = process.env.PORT || Config.PORT || 5000;
+const server = app.listen(PORT, Config.HOST, () => {
   console.log('============================================================');
-  console.log(`Backend server running on port ${Config.PORT}`);
-  console.log(`API URL: http://localhost:${Config.PORT}/api`);
+  console.log(`Backend server running on port ${PORT}`);
+  console.log(`API URL: http://localhost:${PORT}/api`);
   console.log(`Machine Target: ${Config.MACHINE_NAME} [${Config.MACHINE_ID}]`);
   console.log('Immediate 1-Anomaly Alert Sentinel: ACTIVE');
   console.log('============================================================');
