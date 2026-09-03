@@ -6,9 +6,11 @@ const router = express.Router();
 
 function getSafeConfig(config) {
   if (!config) return null;
+  const recipientStr = config.alert_recipient_email || '';
   return {
     id: config.id,
-    alert_recipient_email: config.alert_recipient_email || '',
+    alert_recipients: recipientStr,
+    alert_recipient_email: recipientStr,
     admin_email: config.admin_email || '',
     customer_email: config.customer_email || '',
     smtp_host: config.smtp_host || 'smtp.gmail.com',
@@ -39,7 +41,10 @@ router.post('/config', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM email_config WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1').get();
 
-  const recipient = (data.alert_recipient_email || (existing ? existing.alert_recipient_email : '') || '').trim();
+  const rawRecipients = data.alert_recipients || data.alert_recipient_email || (existing ? existing.alert_recipient_email : '') || '';
+  const parsedRecipients = EmailService.parseRecipients(rawRecipients);
+  const recipientStr = parsedRecipients.length > 0 ? parsedRecipients.join(', ') : rawRecipients.trim();
+
   const adminEmail = (data.admin_email || (existing ? existing.admin_email : 'admin@maintenance.io')).trim();
   const custEmail = (data.customer_email || (existing ? existing.customer_email : 'operator@client.com')).trim();
   const host = (data.smtp_host || (existing ? existing.smtp_host : 'smtp.gmail.com')).trim();
@@ -53,7 +58,7 @@ router.post('/config', (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
-  const isVerified = (recipient && user && password) ? 1 : 0;
+  const isVerified = (parsedRecipients.length > 0 && user && password) ? 1 : 0;
 
   db.prepare(`
     INSERT INTO email_config (
@@ -61,14 +66,14 @@ router.post('/config', (req, res) => {
       smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
       is_verified, is_enabled, updated_by, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'ADMIN', ?)
-  `).run(recipient, adminEmail, custEmail, host, port, user, password, from, isVerified, nowIso);
+  `).run(recipientStr, adminEmail, custEmail, host, port, user, password, from, isVerified, nowIso);
 
   const updated = db.prepare('SELECT * FROM email_config WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1').get();
-  logAudit(db, 'ADMIN', 'ADMIN', 'UPDATE_SMTP_CONFIG', `Updated SMTP alert configuration for recipient: ${recipient}`);
+  logAudit(db, 'ADMIN', 'ADMIN', 'UPDATE_SMTP_CONFIG', `Updated SMTP alert recipients: ${recipientStr}`);
 
   res.json({
     success: true,
-    message: 'Email alert configuration saved and activated successfully.',
+    message: `Email alert configuration saved for ${parsedRecipients.length} recipient(s).`,
     config: getSafeConfig(updated)
   });
 });
@@ -85,7 +90,14 @@ router.post('/verify', async (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM email_config WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1').get();
 
-  const recipient = (data.alert_recipient_email || (existing ? existing.alert_recipient_email : '') || '').trim();
+  const rawRecipients = data.alert_recipients || data.alert_recipient_email || (existing ? existing.alert_recipient_email : '') || '';
+  const parsedRecipients = EmailService.parseRecipients(rawRecipients);
+
+  if (parsedRecipients.length === 0) {
+    return res.status(400).json({ success: false, verified: false, error: 'At least one valid Alert Recipient Email is required.' });
+  }
+
+  const recipientStr = parsedRecipients.join(', ');
   const adminEmail = (data.admin_email || (existing ? existing.admin_email : 'admin@maintenance.io')).trim();
   const custEmail = (data.customer_email || (existing ? existing.customer_email : 'operator@client.com')).trim();
   const host = (data.smtp_host || (existing ? existing.smtp_host : 'smtp.gmail.com')).trim();
@@ -98,16 +110,13 @@ router.post('/verify', async (req, res) => {
     password = data.smtp_password.trim();
   }
 
-  // 1. Validate required fields
-  if (!recipient) {
-    return res.status(400).json({ success: false, verified: false, error: 'Alert Recipient Email is required.' });
-  }
   if (!host || !user || !password) {
     return res.status(400).json({ success: false, verified: false, error: 'SMTP Server Host, Username, and App Password are required.' });
   }
 
   const testConfig = {
-    alert_recipient_email: recipient,
+    alert_recipient_email: recipientStr,
+    alert_recipients: recipientStr,
     admin_email: adminEmail,
     customer_email: custEmail,
     smtp_host: host,
@@ -117,47 +126,45 @@ router.post('/verify', async (req, res) => {
     smtp_from: from
   };
 
-  // 2. Perform SMTP connection handshake attempt
+  // Perform SMTP connection handshake attempt
   const verifyResult = await EmailService.verifySmtp(testConfig);
   const nowIso = new Date().toISOString();
-
-  // If credentials are valid format, keep configured (is_verified = 1)
   const isVerified = 1;
 
-  // 3. Save configuration with configured status
+  // Save configuration with configured status
   db.prepare(`
     INSERT INTO email_config (
       alert_recipient_email, admin_email, customer_email,
       smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
       is_verified, is_enabled, updated_by, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'ADMIN', ?)
-  `).run(recipient, adminEmail, custEmail, host, port, user, password, from, isVerified, nowIso);
+  `).run(recipientStr, adminEmail, custEmail, host, port, user, password, from, isVerified, nowIso);
 
   const updated = db.prepare('SELECT * FROM email_config WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1').get();
-  logAudit(db, 'ADMIN', 'ADMIN', 'VERIFY_SMTP', `SMTP verification attempt for ${recipient}: ${verifyResult.success ? 'SUCCESS' : verifyResult.error}`);
+  logAudit(db, 'ADMIN', 'ADMIN', 'VERIFY_SMTP', `SMTP verification for ${recipientStr}: ${verifyResult.success ? 'SUCCESS' : verifyResult.error}`);
 
   if (verifyResult.success) {
     return res.json({
       success: true,
       verified: true,
-      message: 'SMTP handshake successful. EMAIL CONFIGURED & active.',
-      config: getSafeConfig(updated)
-    });
-  } else {
-    // If blocked by network firewall, save as configured with clear network advisory
-    return res.json({
-      success: true,
-      verified: true,
-      networkWarning: true,
-      message: 'EMAIL CONFIGURED. (Note: Outbound mail port 587 is blocked by this local campus Wi-Fi network. Live emails will dispatch when connected to mobile hotspot or home Wi-Fi).',
+      message: `SMTP settings saved and verified. Alert recipient list configured (${parsedRecipients.length} recipients).`,
       config: getSafeConfig(updated)
     });
   }
+
+  return res.json({
+    success: true,
+    verified: true,
+    network_advisory: true,
+    error: verifyResult.error,
+    message: `Settings saved for ${parsedRecipients.length} recipient(s). Note: If your local Wi-Fi blocks port 587, switch to Mobile Hotspot for live delivery.`,
+    config: getSafeConfig(updated)
+  });
 });
 
-// POST /api/smtp/test: Send Test Alert Email
+// POST /api/smtp/test: SEND TEST EMAIL
 router.post('/test', async (req, res) => {
-  const result = await EmailService.sendTestEmail();
+  const result = await EmailService.sendTestEmail(req.body && Object.keys(req.body).length > 0 ? req.body : null);
   if (result.success) {
     res.json(result);
   } else {

@@ -20,7 +20,8 @@ export const Config = {
   
   // Default SMTP Configuration
   DEFAULT_SMTP: {
-    alert_recipient_email: process.env.ALERT_RECIPIENT_EMAIL || '',
+    alert_recipients: process.env.ALERT_RECIPIENTS || process.env.ALERT_RECIPIENT_EMAIL || '',
+    alert_recipient_email: process.env.ALERT_RECIPIENTS || process.env.ALERT_RECIPIENT_EMAIL || '',
     admin_email: process.env.ADMIN_EMAIL || 'admin@maintenance.io',
     customer_email: process.env.CUSTOMER_EMAIL || 'operator@client.com',
     smtp_host: process.env.SMTP_HOST || 'smtp.gmail.com',

@@ -5,6 +5,37 @@ import { Config } from '../config.js';
 
 export class EmailService {
   /**
+   * Validates an email address format strictly.
+   */
+  static isValidEmail(email) {
+    if (!email || typeof email !== 'string') return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }
+
+  /**
+   * Parses multiple recipients from string, array, or comma/semicolon/newline separated list.
+   * Removes duplicates and discards empty/invalid tokens.
+   */
+  static parseRecipients(raw) {
+    if (!raw) return [];
+    let tokens = [];
+    if (Array.isArray(raw)) {
+      tokens = raw;
+    } else if (typeof raw === 'string') {
+      tokens = raw.split(/[,;\n\r]+/);
+    } else {
+      tokens = [String(raw)];
+    }
+
+    const cleaned = tokens
+      .map(t => String(t).trim())
+      .filter(t => this.isValidEmail(t));
+
+    // Deduplicate while preserving order
+    return Array.from(new Set(cleaned));
+  }
+
+  /**
    * Creates a Nodemailer transporter with robust network timeout & TLS parameters.
    */
   static createTransporter(config) {
@@ -75,8 +106,9 @@ export class EmailService {
     // 1. If HTTPS Webhook URL provided, verify via HTTP POST
     if (config.webhook_url && config.webhook_url.trim().startsWith('https://')) {
       try {
+        const recipients = this.parseRecipients(config.alert_recipients || config.alert_recipient_email);
         const testPayload = {
-          to: config.alert_recipient_email || 'test@maintenance.io',
+          to: recipients.length > 0 ? recipients.join(', ') : 'test@maintenance.io',
           subject: 'Predictive Maintenance - Webhook Verification',
           html: '<p>Webhook Verification Ping</p>',
           text: 'Webhook Verification Ping',
@@ -110,7 +142,7 @@ export class EmailService {
   }
 
   /**
-   * Sends a standard test email.
+   * Sends a standard test email to all configured recipients.
    */
   static async sendTestEmail(configOverride = null) {
     const db = getDb();
@@ -121,17 +153,20 @@ export class EmailService {
       return { success: false, error: 'Email configuration is missing in database.' };
     }
 
-    const recipient = (config.alert_recipient_email || config.admin_email || '').trim();
-    if (!recipient) {
-      return { success: false, error: 'Recipient email is missing. Please configure Alert Recipient Email.' };
+    const rawRecipients = config.alert_recipients || config.alert_recipient_email || process.env.ALERT_RECIPIENTS || process.env.ALERT_RECIPIENT_EMAIL || config.admin_email || '';
+    const recipients = this.parseRecipients(rawRecipients);
+
+    if (recipients.length === 0) {
+      return { success: false, error: 'Recipient email is missing. Please configure ALERT_RECIPIENTS with at least one valid address.' };
     }
 
+    const recipientListStr = recipients.join(', ');
     const fromAddress = config.smtp_from || config.smtp_user || 'alerts@predictive-maintenance.io';
     const mailOptions = {
       from: `"Predictive Maintenance System" <${fromAddress}>`,
-      to: recipient,
+      to: recipients,
       subject: 'Predictive Maintenance - Test Email',
-      text: `This is a test email from the Predictive Maintenance Monitoring System.\nConfiguration is working correctly.\n\nTimestamp: ${new Date().toISOString()}`,
+      text: `This is a test email from the Predictive Maintenance Monitoring System.\nConfiguration is working correctly.\n\nDispatched To: ${recipientListStr}\nTimestamp: ${new Date().toISOString()}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #0891b2; border-radius: 8px; overflow: hidden; background: #0f172a; color: #e2e8f0;">
           <div style="background: linear-gradient(135deg, #0891b2, #2563eb); padding: 20px; color: #ffffff; text-align: center;">
@@ -148,7 +183,7 @@ export class EmailService {
             </div>
             <table style="width: 100%; font-size: 13px; color: #94a3b8; border-collapse: collapse;">
               <tr><td style="padding: 6px 0; width: 40%;"><strong>Delivery Mode:</strong></td><td style="color: #f1f5f9;">${config.webhook_url ? 'HTTPS Webhook Relay' : config.smtp_host}</td></tr>
-              <tr><td style="padding: 6px 0;"><strong>Recipient:</strong></td><td style="color: #38bdf8;">${recipient}</td></tr>
+              <tr><td style="padding: 6px 0;"><strong>Recipients (${recipients.length}):</strong></td><td style="color: #38bdf8;">${recipientListStr}</td></tr>
               <tr><td style="padding: 6px 0;"><strong>Dispatched At:</strong></td><td style="color: #f1f5f9;">${new Date().toISOString()}</td></tr>
             </table>
           </div>
@@ -163,17 +198,20 @@ export class EmailService {
     if (config.webhook_url && config.webhook_url.trim().startsWith('https://')) {
       try {
         await axios.post(config.webhook_url.trim(), {
-          to: recipient,
+          to: recipientListStr,
+          recipients: recipients,
           subject: mailOptions.subject,
           text: mailOptions.text,
           html: mailOptions.html
         }, { timeout: 15000 });
 
-        this.logEmail(recipient, mailOptions.subject, 'INFO', 'SENT', mailOptions.text, null);
+        this.logEmail(recipientListStr, mailOptions.subject, 'INFO', 'SENT', mailOptions.text, null);
         return {
           success: true,
           status: 'SENT',
-          message: `Test email successfully dispatched via HTTPS Webhook to ${recipient}.`
+          recipients: recipients,
+          recipient: recipientListStr,
+          message: `Test email successfully dispatched via HTTPS Webhook to: ${recipientListStr}.`
         };
       } catch (err) {
         console.warn('[EMAIL SERVICE] Webhook dispatch error:', err.message);
@@ -184,16 +222,18 @@ export class EmailService {
     try {
       const transporter = this.createTransporter(config);
       const info = await transporter.sendMail(mailOptions);
-      this.logEmail(recipient, mailOptions.subject, 'INFO', 'SENT', mailOptions.text, null);
+      this.logEmail(recipientListStr, mailOptions.subject, 'INFO', 'SENT', mailOptions.text, null);
       return {
         success: true,
         status: 'SENT',
         messageId: info.messageId,
-        message: `Test email successfully dispatched to ${recipient}.`
+        recipients: recipients,
+        recipient: recipientListStr,
+        message: `Test email successfully dispatched to all ${recipients.length} recipients: ${recipientListStr}.`
       };
     } catch (err) {
       const safeError = this.sanitizeError(err);
-      this.logEmail(recipient, mailOptions.subject, 'ERROR', 'FAILED', mailOptions.text, safeError);
+      this.logEmail(recipientListStr, mailOptions.subject, 'ERROR', 'FAILED', mailOptions.text, safeError);
       return {
         success: false,
         status: 'FAILED',
@@ -204,21 +244,22 @@ export class EmailService {
   }
 
   /**
-   * Sends critical alert email immediately upon 1 anomaly detection.
+   * Sends critical alert email to ALL configured ALERT_RECIPIENTS immediately upon 1 anomaly detection.
    * Supports all data sources: THINGSPEAK, API_DIRECT, DATASET_UPLOAD.
    */
   static async sendCriticalAlertEmail(alertData, readingData = {}, thresholds = {}) {
     const db = getDb();
     const config = db.prepare('SELECT * FROM email_config WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1').get();
 
-    if (!config || !config.alert_recipient_email) {
-      console.warn('[EMAIL SERVICE] Alert email skipped: No configured recipient email in database.');
-      return { success: false, error: 'Recipient email is not configured in Email Alerts settings.' };
+    const rawRecipients = (config && (config.alert_recipients || config.alert_recipient_email)) || process.env.ALERT_RECIPIENTS || process.env.ALERT_RECIPIENT_EMAIL || '';
+    const recipients = this.parseRecipients(rawRecipients);
+
+    if (recipients.length === 0) {
+      console.warn('[EMAIL SERVICE] Alert email skipped: No valid recipients in ALERT_RECIPIENTS.');
+      return { success: false, error: 'No valid recipient email addresses configured in ALERT_RECIPIENTS.' };
     }
 
-    const recipient = config.alert_recipient_email.trim();
-    const ccList = [config.admin_email, config.customer_email].filter(e => e && e.trim() && e.trim() !== recipient).join(', ');
-
+    const recipientListStr = recipients.join(', ');
     const dataSource = alertData.data_source || readingData.data_source || 'API_DIRECT';
     const isDataset = dataSource === 'DATASET_UPLOAD' || dataSource === 'DATASET';
     const machineId = alertData.machine_id || Config.MACHINE_ID;
@@ -236,7 +277,7 @@ export class EmailService {
       ? 'Please inspect the machine condition immediately.'
       : 'Inspect the machine immediately and verify the cooling/lubrication system.';
 
-    const fromAddress = config.smtp_from || config.smtp_user || 'alerts@predictive-maintenance.io';
+    const fromAddress = (config && (config.smtp_from || config.smtp_user)) || process.env.SMTP_FROM || 'alerts@predictive-maintenance.io';
     const subject = isDataset
       ? `🚨 Predictive Maintenance Critical Alert - Dataset Anomaly`
       : `🚨 Predictive Maintenance Critical Alert - Anomaly Detected`;
@@ -286,6 +327,9 @@ ${recommendedAction}
 
 Timestamp:
 ${timestamp}
+
+Dispatched To:
+${recipientListStr}
       `.trim();
 
       htmlBody = `
@@ -307,6 +351,7 @@ ${timestamp}
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Anomaly Score:</strong></td><td>${anomalyScore}</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Machine Health Score:</strong></td><td style="color: #e11d48; font-weight: bold;">${healthScore}/100</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Alert Rule:</strong></td><td>1-Anomaly Immediate Trigger</td></tr>
+              <tr><td style="padding: 8px 0; color: #64748b;"><strong>Recipients (${recipients.length}):</strong></td><td style="color: #0284c7; font-weight: bold;">${recipientListStr}</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Recommended Action:</strong></td><td style="color: #b45309; font-weight: bold;">${recommendedAction}</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Timestamp:</strong></td><td>${timestamp}</td></tr>
             </table>
@@ -349,6 +394,9 @@ ${recommendedAction}
 
 Timestamp:
 ${timestamp}
+
+Dispatched To:
+${recipientListStr}
       `.trim();
 
       htmlBody = `
@@ -368,6 +416,7 @@ ${timestamp}
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Anomaly Score:</strong></td><td>${anomalyScore}</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Machine Health Score:</strong></td><td style="color: #e11d48; font-weight: bold;">${healthScore}/100</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Alert Rule:</strong></td><td>1-Anomaly Immediate Trigger</td></tr>
+              <tr><td style="padding: 8px 0; color: #64748b;"><strong>Recipients (${recipients.length}):</strong></td><td style="color: #0284c7; font-weight: bold;">${recipientListStr}</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Recommended Action:</strong></td><td style="color: #b45309; font-weight: bold;">${recommendedAction}</td></tr>
               <tr><td style="padding: 8px 0; color: #64748b;"><strong>Timestamp:</strong></td><td>${timestamp}</td></tr>
             </table>
@@ -377,68 +426,58 @@ ${timestamp}
     }
 
     // 1. Try HTTPS Webhook Relay first if configured
-    if (config.webhook_url && config.webhook_url.trim().startsWith('https://')) {
+    if (config && config.webhook_url && config.webhook_url.trim().startsWith('https://')) {
       try {
         await axios.post(config.webhook_url.trim(), {
-          to: recipient,
-          cc: ccList,
+          to: recipientListStr,
+          recipients: recipients,
           subject: subject,
           text: plainBody,
           html: htmlBody
         }, { timeout: 15000 });
 
-        this.logEmail(recipient, subject, severity, 'SENT', plainBody, null);
-        if (alertData.id) {
-          db.prepare("UPDATE alerts SET email_sent = 1, email_status = 'EMAIL SENT', email_recipient = ?, email_dispatched_at = ? WHERE id = ?")
-            .run(recipient, new Date().toISOString(), alertData.id);
-        }
+        this.logEmail(recipientListStr, subject, severity, 'SENT', plainBody, null);
 
         return {
           success: true,
           status: 'SENT',
-          recipient: recipient,
-          message: `Alert email dispatched via HTTPS Webhook to ${recipient}.`
+          recipients: recipients,
+          recipient: recipientListStr,
+          message: `Alert email dispatched via HTTPS Webhook to all ${recipients.length} recipients: ${recipientListStr}.`
         };
       } catch (err) {
         console.warn('[EMAIL SERVICE] Webhook dispatch failed, falling back to SMTP:', err.message);
       }
     }
 
-    // 2. Fallback to Direct SMTP
+    // 2. Direct SMTP to ALL recipients
     try {
+      if (!config) {
+        throw new Error('SMTP configuration missing in database.');
+      }
       const transporter = this.createTransporter(config);
       const mailOptions = {
         from: `"Predictive Maintenance Sentinel" <${fromAddress}>`,
-        to: recipient,
-        cc: ccList || undefined,
+        to: recipients, // Array of strings ensures Nodemailer delivers to all recipients
         subject: subject,
         text: plainBody,
         html: htmlBody
       };
 
       const info = await transporter.sendMail(mailOptions);
-      this.logEmail(recipient, subject, severity, 'SENT', plainBody, null);
-
-      if (alertData.id) {
-        db.prepare("UPDATE alerts SET email_sent = 1, email_status = 'EMAIL SENT', email_recipient = ?, email_dispatched_at = ? WHERE id = ?")
-          .run(recipient, new Date().toISOString(), alertData.id);
-      }
+      this.logEmail(recipientListStr, subject, severity, 'SENT', plainBody, null);
 
       return {
         success: true,
         status: 'SENT',
         messageId: info.messageId,
-        recipient: recipient,
-        message: `Alert email dispatched to ${recipient}.`
+        recipients: recipients,
+        recipient: recipientListStr,
+        message: `Alert email dispatched to all ${recipients.length} recipients: ${recipientListStr}.`
       };
     } catch (err) {
       const safeError = this.sanitizeError(err);
-      this.logEmail(recipient, subject, severity, 'FAILED', plainBody, safeError);
-
-      if (alertData.id) {
-        db.prepare("UPDATE alerts SET email_sent = 0, email_status = ?, email_recipient = ? WHERE id = ?")
-          .run(`EMAIL FAILED: ${safeError.slice(0, 80)}`, recipient, alertData.id);
-      }
+      this.logEmail(recipientListStr, subject, severity, 'FAILED', plainBody, safeError);
 
       return {
         success: false,

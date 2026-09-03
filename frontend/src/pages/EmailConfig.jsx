@@ -15,7 +15,8 @@ import {
   Check,
   XCircle,
   Wifi,
-  Globe
+  Globe,
+  Users
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -45,7 +46,7 @@ export function EmailConfig() {
       const res = await api.getEmailConfig();
       if (res.success && res.config) {
         setFormData({
-          alert_recipient_email: res.config.alert_recipient_email || '',
+          alert_recipient_email: res.config.alert_recipients || res.config.alert_recipient_email || '',
           admin_email: res.config.admin_email || '',
           customer_email: res.config.customer_email || '',
           smtp_host: res.config.smtp_host || 'smtp.gmail.com',
@@ -70,8 +71,8 @@ export function EmailConfig() {
 
   const handleSaveAndVerify = async (e) => {
     if (e) e.preventDefault();
-    if (!formData.alert_recipient_email) {
-      setStatusMsg({ type: 'error', text: 'Alert Recipient Email is required.' });
+    if (!formData.alert_recipient_email || !formData.alert_recipient_email.trim()) {
+      setStatusMsg({ type: 'error', text: 'At least one Alert Recipient Email is required.' });
       return;
     }
     if (!formData.smtp_host || !formData.smtp_user || !formData.smtp_password) {
@@ -98,7 +99,7 @@ export function EmailConfig() {
         });
       }
     } catch (err) {
-      setIsVerified(true); // Still keep saved in backend
+      setIsVerified(true); // Keep saved in backend
       setStatusMsg({
         type: 'info',
         text: 'Credentials saved and activated. Note: If your current Wi-Fi network blocks outbound port 587, switch to Mobile Hotspot or home Wi-Fi for live email delivery.'
@@ -110,8 +111,8 @@ export function EmailConfig() {
   };
 
   const handleSaveOnly = async () => {
-    if (!formData.alert_recipient_email) {
-      setStatusMsg({ type: 'error', text: 'Alert Recipient Email is required.' });
+    if (!formData.alert_recipient_email || !formData.alert_recipient_email.trim()) {
+      setStatusMsg({ type: 'error', text: 'At least one Alert Recipient Email is required.' });
       return;
     }
     try {
@@ -137,7 +138,7 @@ export function EmailConfig() {
       setStatusMsg(null);
       const res = await api.sendTestEmail();
       if (res.success && res.status === 'SENT') {
-        setStatusMsg({ type: 'success', text: res.message || 'Test email dispatched successfully to your inbox.' });
+        setStatusMsg({ type: 'success', text: res.message || 'Test email dispatched successfully to your inboxes.' });
       } else {
         setStatusMsg({
           type: 'error',
@@ -165,106 +166,126 @@ export function EmailConfig() {
   return (
     <div className="space-y-6">
       
-      {/* Header with Verified Status Badge */}
+      {/* Header & Status Card */}
       <div className="industrial-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <Mail className="w-5 h-5 text-cyan-600" />
-              <span>Email Alert &amp; SMTP Configuration</span>
-            </h2>
-            <p className="text-xs text-slate-500 mt-1 font-sans">
-              Configure SMTP credentials. Immediate critical email notifications are dispatched when <strong>1 anomaly</strong> is detected.
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-xs ${
+              isVerified
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-600'
+                : 'bg-slate-100 border-slate-300 text-slate-500'
+            }`}>
+              <Mail className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wider">
+                  Email Alert Dispatch Engine
+                </h2>
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold flex items-center gap-1 border shadow-xs ${
+                  isVerified
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                    : 'bg-amber-50 text-amber-700 border-amber-300'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${isVerified ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                  {isVerified ? 'EMAIL CONFIGURED' : 'PENDING CONFIGURATION'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5 font-sans">
+                Real-time incident dispatch: Sends instant HTML critical alerts to ALL configured recipients upon 1 detected anomaly.
+              </p>
+            </div>
           </div>
 
-          {/* Verification Status Indicator */}
           <div className="flex items-center gap-2">
-            {isVerified ? (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-800 text-xs font-mono font-bold shadow-xs">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>EMAIL CONFIGURED</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 border border-rose-300 rounded-lg text-rose-800 text-xs font-mono font-bold shadow-xs">
-                <XCircle className="w-4 h-4 text-rose-600" />
-                <span>EMAIL NOT CONFIGURED</span>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={handleSendTestEmail}
+              disabled={sendingTest}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 text-xs shadow-xs transition disabled:opacity-50"
+            >
+              <Send className={`w-3.5 h-3.5 ${sendingTest ? 'animate-spin' : ''}`} />
+              <span>{sendingTest ? 'Sending...' : 'Send Test Alert'}</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Network / Firewall Advisory Banner */}
-      <div className="p-4 bg-cyan-50 border border-cyan-200 rounded-xl text-cyan-900 text-xs flex items-start gap-3 shadow-xs">
-        <Wifi className="w-5 h-5 text-cyan-700 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <div className="font-bold text-xs uppercase tracking-wide text-cyan-950">
-            Network &amp; Campus Firewall Note
-          </div>
-          <p className="text-cyan-800 leading-relaxed font-sans">
-            If you are connected to a <strong>Campus, College, or Corporate Wi-Fi network</strong>, direct outbound mail ports (Port 587 / 465) are often blocked by the institutional firewall. 
-            To receive live emails directly into your Gmail inbox, simply connect your laptop to your <strong>Mobile Hotspot (phone data)</strong> or <strong>Home Wi-Fi</strong>.
-          </p>
+      {/* Network Advisory Notice */}
+      <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 text-slate-700 text-xs space-y-1.5 shadow-2xs font-sans">
+        <div className="flex items-center gap-2 font-bold text-blue-900">
+          <Wifi className="w-4 h-4 text-blue-600" />
+          <span>Multi-Recipient Alert Dispatch Engine</span>
         </div>
+        <p className="text-slate-600 leading-relaxed">
+          Alerts are broadcast to all email addresses in your recipient list. Multiple addresses can be entered separated by commas.
+        </p>
       </div>
 
+      {/* Status Feedback Banner */}
       {statusMsg && (
-        <div className={`p-3.5 rounded-lg text-xs font-semibold flex items-center justify-between border shadow-xs ${
-          statusMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
-          statusMsg.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' :
-          'bg-cyan-50 border-cyan-200 text-cyan-800'
+        <div className={`p-4 rounded-xl border flex items-start gap-3 text-xs font-sans shadow-xs transition ${
+          statusMsg.type === 'success'
+            ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+            : statusMsg.type === 'error'
+            ? 'bg-rose-50 border-rose-300 text-rose-900'
+            : 'bg-blue-50 border-blue-300 text-blue-900'
         }`}>
-          <div className="flex items-center gap-2">
-            {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
-            <span>{statusMsg.text}</span>
+          {statusMsg.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          ) : statusMsg.type === 'error' ? (
+            <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1 font-medium leading-relaxed">
+            {statusMsg.text}
           </div>
-          <button onClick={() => setStatusMsg(null)} className="text-slate-400 hover:text-slate-700">✕</button>
         </div>
       )}
 
-      {/* Main Grid: Form & Email Preview */}
+      {/* Main Configuration Form & Live Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Form Column */}
+        {/* Settings Form Column */}
         <div className="industrial-card p-5 space-y-4">
           <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                SMTP Server &amp; Alert Recipient
-              </h3>
-              <p className="text-xs text-slate-500 font-sans">Connect to your Gmail or custom SMTP server using STARTTLS</p>
-            </div>
-            <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 font-mono rounded border border-slate-200">
-              Port 587 &bull; STARTTLS
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <Server className="w-4 h-4 text-cyan-600" />
+              <span>SMTP Server &amp; Alert Recipients</span>
+            </h3>
+            <span className="text-[10px] text-slate-500 font-mono">
+              Port {formData.smtp_port} &bull; STARTTLS
             </span>
           </div>
 
           <form onSubmit={handleSaveAndVerify} className="space-y-4 text-xs font-mono">
-            {/* Primary Alert Recipient Email */}
+            {/* Multiple Alert Recipients */}
             <div className="p-3.5 rounded-lg bg-cyan-50/70 border border-cyan-200 space-y-1">
-              <label className="block text-cyan-900 font-bold uppercase tracking-wider text-[11px]">
-                Alert Recipient Email <span className="text-rose-600">*</span>
+              <label className="block text-cyan-900 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5 font-sans">
+                <Users className="w-3.5 h-3.5 text-cyan-700" />
+                <span>Alert Recipients (Comma-Separated)</span>
+                <span className="text-rose-600">*</span>
               </label>
               <input
-                type="email"
+                type="text"
                 value={formData.alert_recipient_email}
                 onChange={(e) => setFormData(p => ({ ...p, alert_recipient_email: e.target.value }))}
-                placeholder="e.g. your_email@gmail.com"
-                className="w-full px-3 py-2 bg-white border border-cyan-300 rounded-lg text-slate-900 font-bold focus:border-cyan-600 focus:outline-none"
+                placeholder="e.g. admin@example.com, customer@example.com, maintenance@example.com"
+                className="w-full px-3 py-2 bg-white border border-cyan-300 rounded-lg text-slate-900 font-bold focus:border-cyan-600 focus:outline-none shadow-2xs font-mono"
                 required
               />
               <p className="text-[11px] text-slate-500 font-sans">
-                Immediate critical alerts for every single detected anomaly will be dispatched to this address.
+                Immediate critical alerts for every single detected anomaly will be dispatched to <strong>ALL</strong> listed recipients.
               </p>
             </div>
 
             {/* Admin & Customer fallback CC emails */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Admin Email (CC):</label>
+                <label className="block text-slate-700 font-semibold mb-1 font-sans">Admin Email (CC):</label>
                 <input
-                  type="email"
+                  type="text"
                   value={formData.admin_email}
                   onChange={(e) => setFormData(p => ({ ...p, admin_email: e.target.value }))}
                   placeholder="admin@maintenance.io"
@@ -272,9 +293,9 @@ export function EmailConfig() {
                 />
               </div>
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Customer Email (CC):</label>
+                <label className="block text-slate-700 font-semibold mb-1 font-sans">Customer Email (CC):</label>
                 <input
-                  type="email"
+                  type="text"
                   value={formData.customer_email}
                   onChange={(e) => setFormData(p => ({ ...p, customer_email: e.target.value }))}
                   placeholder="operator@client.com"
@@ -381,22 +402,12 @@ export function EmailConfig() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={savingOnly}
                   onClick={handleSaveOnly}
-                  className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg font-bold text-xs transition disabled:opacity-50 shadow-xs"
+                  disabled={savingOnly}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold text-xs border border-slate-300 shadow-2xs transition disabled:opacity-50"
                 >
-                  <Save className="w-3.5 h-3.5 inline mr-1" />
-                  <span>Save Only</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={sendingTest}
-                  onClick={handleSendTestEmail}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs shadow-xs transition disabled:opacity-50"
-                >
-                  <Send className={`w-3.5 h-3.5 ${sendingTest ? 'animate-spin' : ''}`} />
-                  <span>{sendingTest ? 'Sending...' : 'Send Test Alert'}</span>
+                  <Save className={`w-3.5 h-3.5 ${savingOnly ? 'animate-spin' : ''}`} />
+                  <span>{savingOnly ? 'Saving...' : 'Save Settings'}</span>
                 </button>
               </div>
             </div>
@@ -421,7 +432,7 @@ export function EmailConfig() {
                 <span className="font-bold text-slate-900">Subject: 🚨 Predictive Maintenance Critical Alert - [MACH-01]</span>
                 <span className="text-[10px] text-slate-500 font-mono">Just Now</span>
               </div>
-              <div className="text-slate-600 font-mono text-[11px]">
+              <div className="text-slate-600 font-mono text-[11px] break-words">
                 To: <span className="text-slate-900 font-bold">{formData.alert_recipient_email || '(Not Configured)'}</span>
               </div>
               <div className="text-slate-600 font-mono text-[11px]">
