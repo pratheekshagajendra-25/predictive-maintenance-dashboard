@@ -89,16 +89,18 @@ if (fs.existsSync(frontendDist)) {
   });
 }
 
-// Start Server on PORT 5000
-const PORT = process.env.PORT || Config.PORT || 5000;
-const server = app.listen(PORT, Config.HOST, () => {
-  console.log('============================================================');
-  console.log(`Backend server running on port ${PORT}`);
-  console.log(`API URL: http://localhost:${PORT}/api`);
-  console.log(`Machine Target: ${Config.MACHINE_NAME} [${Config.MACHINE_ID}]`);
-  console.log('Immediate 1-Anomaly Alert Sentinel: ACTIVE');
-  console.log('============================================================');
-});
+// Start Server on PORT 5000 (when not in Vercel serverless mode)
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || Config.PORT || 5000;
+  app.listen(PORT, Config.HOST, () => {
+    console.log('============================================================');
+    console.log(`Backend server running on port ${PORT}`);
+    console.log(`API URL: http://localhost:${PORT}/api`);
+    console.log(`Machine Target: ${Config.MACHINE_NAME} [${Config.MACHINE_ID}]`);
+    console.log('Immediate 1-Anomaly Alert Sentinel: ACTIVE');
+    console.log('============================================================');
+  });
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
