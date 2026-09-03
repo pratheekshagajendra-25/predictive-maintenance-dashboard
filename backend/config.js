@@ -12,8 +12,8 @@ export const Config = {
   HOST: process.env.HOST || '0.0.0.0',
   JWT_SECRET: process.env.JWT_SECRET || 'pm_super_secret_jwt_key_ind40_2026',
   BASE_DIR: __dirname,
-  DATABASE_PATH: process.env.DATABASE_PATH || path.join(__dirname, 'predictive_maintenance.db'),
-  UPLOADS_DIR: path.join(__dirname, 'uploads'),
+  DATABASE_PATH: process.env.DATABASE_PATH || (process.env.VERCEL ? path.join('/tmp', 'predictive_maintenance.db') : path.join(__dirname, 'predictive_maintenance.db')),
+  UPLOADS_DIR: process.env.VERCEL ? path.join('/tmp', 'uploads') : path.join(__dirname, 'uploads'),
   
   MACHINE_ID: process.env.MACHINE_ID || 'Machine-01',
   MACHINE_NAME: process.env.MACHINE_NAME || 'Machine 01',
