@@ -3,34 +3,26 @@ import { api } from '../api/client';
 
 const AuthContext = createContext(null);
 
-const DEFAULT_ADMIN_USER = {
-  id: 1,
-  username: 'admin',
-  email: 'admin@predictive-maintenance.io',
-  role: 'admin',
-  full_name: 'System Administrator'
-};
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem('pm_auth_user');
       if (!saved || saved === 'undefined' || saved === '[object Object]') {
-        return DEFAULT_ADMIN_USER;
+        return null;
       }
       const parsed = JSON.parse(saved);
-      return parsed && parsed.username ? parsed : DEFAULT_ADMIN_USER;
+      return parsed && parsed.username ? parsed : null;
     } catch (e) {
-      return DEFAULT_ADMIN_USER;
+      return null;
     }
   });
 
   const [token, setToken] = useState(() => {
     try {
       const saved = localStorage.getItem('pm_auth_token');
-      return saved && saved !== 'undefined' ? saved : 'demo_token_admin';
+      return saved && saved !== 'undefined' ? saved : null;
     } catch (e) {
-      return 'demo_token_admin';
+      return null;
     }
   });
 
@@ -90,18 +82,11 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    const defaultUser = {
-      id: 2,
-      username: 'customer',
-      email: 'customer@predictive-maintenance.io',
-      role: 'customer',
-      full_name: 'Operator Client'
-    };
-    setToken('demo_token_customer');
-    setUser(defaultUser);
+    setToken(null);
+    setUser(null);
     try {
-      localStorage.setItem('pm_auth_token', 'demo_token_customer');
-      localStorage.setItem('pm_auth_user', JSON.stringify(defaultUser));
+      localStorage.removeItem('pm_auth_token');
+      localStorage.removeItem('pm_auth_user');
     } catch (e) {
       console.warn('Logout storage clear:', e);
     }
@@ -121,11 +106,11 @@ export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
     return {
-      user: DEFAULT_ADMIN_USER,
-      token: 'demo_token_admin',
-      isAdmin: true,
+      user: null,
+      token: null,
+      isAdmin: false,
       isCustomer: false,
-      login: async () => DEFAULT_ADMIN_USER,
+      login: async () => null,
       logout: () => {},
       loading: false
     };
