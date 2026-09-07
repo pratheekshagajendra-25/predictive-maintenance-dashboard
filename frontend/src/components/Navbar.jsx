@@ -36,7 +36,7 @@ export function Navbar({ activeTab, setActiveTab }) {
   const mainNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'email', label: 'Email Alerts (SMTP)', icon: Mail, highlight: true },
-    { id: 'alerts', label: 'Alert History', icon: AlertTriangle, badge: alertCounts.active },
+    { id: 'alerts', label: 'Alert History', icon: AlertTriangle, badge: alertCounts?.active || 0 },
     { id: 'dataset', label: 'Dataset Upload', icon: Database },
     { id: 'thresholds', label: 'Threshold Limits', icon: Sliders },
     { id: 'thingspeak', label: 'ThingSpeak IoT', icon: Radio },
