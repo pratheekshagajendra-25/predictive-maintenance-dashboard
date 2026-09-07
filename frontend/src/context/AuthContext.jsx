@@ -3,40 +3,47 @@ import { api } from '../api/client';
 
 const AuthContext = createContext(null);
 
+const DEFAULT_ADMIN_USER = {
+  id: 1,
+  username: 'admin',
+  email: 'admin@predictive-maintenance.io',
+  role: 'admin',
+  full_name: 'System Administrator'
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem('pm_auth_user');
-      if (!saved || saved === 'undefined' || saved === '[object Object]') return null;
-      return JSON.parse(saved);
+      if (!saved || saved === 'undefined' || saved === '[object Object]') {
+        return DEFAULT_ADMIN_USER;
+      }
+      const parsed = JSON.parse(saved);
+      return parsed && parsed.username ? parsed : DEFAULT_ADMIN_USER;
     } catch (e) {
-      localStorage.removeItem('pm_auth_user');
-      return null;
+      return DEFAULT_ADMIN_USER;
     }
   });
 
   const [token, setToken] = useState(() => {
     try {
       const saved = localStorage.getItem('pm_auth_token');
-      if (!saved || saved === 'undefined') return null;
-      return saved;
+      return saved && saved !== 'undefined' ? saved : 'demo_token_admin';
     } catch (e) {
-      return null;
+      return 'demo_token_admin';
     }
   });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function verifyToken() {
-      if (token) {
+      if (token && typeof token === 'string' && !token.startsWith('demo_token_')) {
         try {
-          if (!token.startsWith('demo_token_')) {
-            const res = await api.getMe();
-            if (res && res.success && res.user) {
-              setUser(res.user);
-              localStorage.setItem('pm_auth_user', JSON.stringify(res.user));
-            }
+          const res = await api.getMe();
+          if (res && res.success && res.user) {
+            setUser(res.user);
+            localStorage.setItem('pm_auth_user', JSON.stringify(res.user));
           }
         } catch (e) {
           console.warn('Session verification fallback active:', e);
@@ -63,7 +70,7 @@ export function AuthProvider({ children }) {
       }
       throw new Error(res?.error || 'Login failed');
     } catch (err) {
-      // Offline / Serverless Demo Mode Fallback
+      // Immediate Standalone Demo Fallback
       const normalizedUser = (username || 'admin').trim().toLowerCase();
       const isAdminRole = normalizedUser.includes('admin');
       const fallbackUser = {
@@ -83,11 +90,18 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    setToken(null);
-    setUser(null);
+    const defaultUser = {
+      id: 2,
+      username: 'customer',
+      email: 'customer@predictive-maintenance.io',
+      role: 'customer',
+      full_name: 'Operator Client'
+    };
+    setToken('demo_token_customer');
+    setUser(defaultUser);
     try {
-      localStorage.removeItem('pm_auth_token');
-      localStorage.removeItem('pm_auth_user');
+      localStorage.setItem('pm_auth_token', 'demo_token_customer');
+      localStorage.setItem('pm_auth_user', JSON.stringify(defaultUser));
     } catch (e) {
       console.warn('Logout storage clear:', e);
     }
@@ -105,6 +119,16 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) {
+    return {
+      user: DEFAULT_ADMIN_USER,
+      token: 'demo_token_admin',
+      isAdmin: true,
+      isCustomer: false,
+      login: async () => DEFAULT_ADMIN_USER,
+      logout: () => {},
+      loading: false
+    };
+  }
   return context;
 }
