@@ -5,10 +5,26 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('pm_auth_user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('pm_auth_user');
+      if (!saved || saved === 'undefined' || saved === '[object Object]') return null;
+      return JSON.parse(saved);
+    } catch (e) {
+      localStorage.removeItem('pm_auth_user');
+      return null;
+    }
   });
-  const [token, setToken] = useState(() => localStorage.getItem('pm_auth_token'));
+
+  const [token, setToken] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pm_auth_token');
+      if (!saved || saved === 'undefined') return null;
+      return saved;
+    } catch (e) {
+      return null;
+    }
+  });
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,7 +33,7 @@ export function AuthProvider({ children }) {
         try {
           if (!token.startsWith('demo_token_')) {
             const res = await api.getMe();
-            if (res.success && res.user) {
+            if (res && res.success && res.user) {
               setUser(res.user);
               localStorage.setItem('pm_auth_user', JSON.stringify(res.user));
             }
@@ -69,8 +85,12 @@ export function AuthProvider({ children }) {
   const logout = () => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem('pm_auth_token');
-    localStorage.removeItem('pm_auth_user');
+    try {
+      localStorage.removeItem('pm_auth_token');
+      localStorage.removeItem('pm_auth_user');
+    } catch (e) {
+      console.warn('Logout storage clear:', e);
+    }
   };
 
   const isAdmin = user?.role === 'admin';
